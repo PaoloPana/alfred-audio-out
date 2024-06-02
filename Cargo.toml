@@ -1,0 +1,9 @@
+[package]
+name = "alfred-audio-out"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rodio = "0.18.1"
+alfred-rs = { path = "../alfred-rs" }
+env_logger = "0.11.3"
