@@ -1,10 +1,10 @@
 use std::fs::File;
 use std::io::BufReader;
+use alfred_rs::connection::Receiver;
 use rodio::{Decoder, OutputStream, Sink};
-use alfred_rs::connection::Subscriber;
 use alfred_rs::error::Error;
+use alfred_rs::interface_module::InterfaceModule;
 use alfred_rs::log::warn;
-use alfred_rs::module::Module;
 use alfred_rs::tokio;
 
 const MODULE_NAME: &'static str = "audio_out";
@@ -22,10 +22,10 @@ fn play_audio(audio_file: String) {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     env_logger::init();
-    let mut module = Module::new(MODULE_NAME.to_string()).await?;
-    module.subscribe(INPUT_TOPIC.to_string()).await?;
+    let mut module = InterfaceModule::new(MODULE_NAME.to_string()).await?;
+    module.listen(INPUT_TOPIC.to_string()).await?;
     loop {
-        let (topic, message) = module.get_message().await?;
+        let (topic, message) = module.receive().await?;
         match topic.as_str() {
             INPUT_TOPIC => play_audio(message.text),
             _ => {
