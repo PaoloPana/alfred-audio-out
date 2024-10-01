@@ -3,13 +3,14 @@ use std::io::BufReader;
 use std::sync::Arc;
 use alfred_rs::connection::{Receiver, Sender};
 use alfred_rs::error::Error;
-use rodio::{Decoder, OutputStream, Sink};
+use rodio::{Decoder, Device, DeviceTrait, OutputStream, Sink};
 use alfred_rs::interface_module::InterfaceModule;
 use alfred_rs::log::{debug, warn};
 use alfred_rs::message::{Message, MessageType};
 use alfred_rs::tokio;
 use alfred_rs::tokio::sync::Mutex;
 use alfred_rs::tokio::sync::mpsc;
+use rodio::cpal::traits::HostTrait;
 
 const MODULE_NAME: &'static str = "audio_out";
 const INPUT_TOPIC: &'static str = "audio_out";
@@ -58,6 +59,17 @@ async fn check_player_status(sink: Arc<Mutex<Sink>>, sender: mpsc::Sender<Player
     }
 }
 
+fn get_device(device_name: String) -> Option<Device> {
+    let devices = rodio::cpal::default_host().output_devices().unwrap();
+    for device in devices {
+        let cur_dev_name = device.name().unwrap();
+        if device_name == cur_dev_name {
+            return Some(device);
+        }
+    }
+    None
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() -> Result<(), Error> {
     env_logger::init();
@@ -67,11 +79,14 @@ async fn main() -> Result<(), Error> {
     subscriber.lock().await.listen(INPUT_TOPIC.to_string()).await.expect("Failed to listen");
     subscriber.lock().await.listen(STOP_TOPIC.to_string()).await.expect("Failed to listen");
 
+    let device_name = module.config.get_module_value("device".to_string()).unwrap_or("default".to_string());
+
     let (alfred_sender, mut player_receiver) = mpsc::channel(10);
     let (player_sender, mut alfred_receiver) = mpsc::channel::<PlayerEvent>(100);
     let player_sender_end_checker = player_sender.clone();
 
-    let (_output_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let device = get_device(device_name.clone()).expect(format!("Failed to get device {device_name}").as_str());
+    let (_output_stream, stream_handle) = OutputStream::try_from_device(&device).unwrap();
     let sink = Arc::new(Mutex::new(Sink::try_new(&stream_handle).expect("Error creating the sink")));
     let sink_end_checker = sink.clone();
 
