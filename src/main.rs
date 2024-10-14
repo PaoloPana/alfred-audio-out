@@ -73,13 +73,13 @@ fn get_device(device_name: String) -> Option<Device> {
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() -> Result<(), Error> {
     env_logger::init();
-    let module = InterfaceModule::new(MODULE_NAME.to_string()).await.expect("Failed to create module");
+    let module = InterfaceModule::new(MODULE_NAME).await.expect("Failed to create module");
     let subscriber = Arc::new(Mutex::new(module.connection.subscriber));
     let publisher = Arc::new(Mutex::new(module.connection.publisher));
-    subscriber.lock().await.listen(INPUT_TOPIC.to_string()).await.expect("Failed to listen");
-    subscriber.lock().await.listen(STOP_TOPIC.to_string()).await.expect("Failed to listen");
+    subscriber.lock().await.listen(INPUT_TOPIC).await.expect("Failed to listen");
+    subscriber.lock().await.listen(STOP_TOPIC).await.expect("Failed to listen");
 
-    let device_name = module.config.get_module_value("device".to_string()).unwrap_or("default".to_string());
+    let device_name = module.config.get_module_value("device").unwrap_or("default".to_string());
 
     let (alfred_sender, mut player_receiver) = mpsc::channel(10);
     let (player_sender, mut alfred_receiver) = mpsc::channel::<PlayerEvent>(100);
@@ -98,13 +98,13 @@ async fn main() -> Result<(), Error> {
             match player_event {
                 PlayerEvent::PlayStarted(audio_file) => {
                     let event_message = Message { text: audio_file, message_type: MessageType::AUDIO, ..Message::default() };
-                    publisher.lock().await.send_event(MODULE_NAME.to_string(), PLAY_START_EVENT.to_string(), &event_message).await.expect("TODO: panic message");
+                    publisher.lock().await.send_event(MODULE_NAME, PLAY_START_EVENT, &event_message).await.expect("TODO: panic message");
                 }
                 PlayerEvent::PlayEnded => {
-                    publisher.lock().await.send_event(MODULE_NAME.to_string(), PLAY_END_EVENT.to_string(), &Message::empty()).await.expect("TODO: panic message");
+                    publisher.lock().await.send_event(MODULE_NAME, PLAY_END_EVENT, &Message::empty()).await.expect("TODO: panic message");
                 }
                 PlayerEvent::PlayStopped => {
-                    publisher.lock().await.send_event(MODULE_NAME.to_string(), PLAY_STOP_EVENT.to_string(), &Message::empty()).await.expect("TODO: panic message");
+                    publisher.lock().await.send_event(MODULE_NAME, PLAY_STOP_EVENT, &Message::empty()).await.expect("TODO: panic message");
                 }
             }
         }
