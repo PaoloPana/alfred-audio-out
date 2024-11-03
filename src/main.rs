@@ -5,19 +5,18 @@ use alfred_rs::connection::{Receiver, Sender};
 use alfred_rs::error::Error;
 use rodio::{Decoder, Device, DeviceTrait, OutputStream, Sink};
 use alfred_rs::interface_module::InterfaceModule;
-use alfred_rs::log::{debug, warn};
+use alfred_rs::log::{debug, error, warn};
 use alfred_rs::message::{Message, MessageType};
 use alfred_rs::tokio;
-use alfred_rs::tokio::sync::Mutex;
-use alfred_rs::tokio::sync::mpsc;
+use alfred_rs::tokio::sync::{mpsc, Mutex};
 use rodio::cpal::traits::HostTrait;
 
-const MODULE_NAME: &'static str = "audio_out";
-const INPUT_TOPIC: &'static str = "audio_out";
-const STOP_TOPIC: &'static str = "audio_out.stop";
-const PLAY_STOP_EVENT: &'static str = "play_stop";
-const PLAY_START_EVENT: &'static str = "play_start";
-const PLAY_END_EVENT: &'static str = "play_end";
+const MODULE_NAME: &str = "audio_out";
+const INPUT_TOPIC: &str = "audio_out";
+const STOP_TOPIC: &str = "audio_out.stop";
+const PLAY_STOP_EVENT: &str = "play_stop";
+const PLAY_START_EVENT: &str = "play_start";
+const PLAY_END_EVENT: &str = "play_end";
 
 #[derive(Debug)]
 enum PlayerCommand {
@@ -25,20 +24,11 @@ enum PlayerCommand {
     Stop
 }
 
-impl PlayerCommand {
-    pub(crate) fn clone(&self) -> Self {
-        match self {
-            PlayerCommand::Play(val) => PlayerCommand::Play(val.clone()),
-            PlayerCommand::Stop => PlayerCommand::Stop
-        }
-    }
-}
-
 #[derive(Debug)]
 enum PlayerEvent {
-    PlayStarted(String),
-    PlayEnded,
-    PlayStopped
+    Started(String),
+    Ended,
+    Stopped
 }
 
 async fn check_player_status(sink: Arc<Mutex<Sink>>, sender: mpsc::Sender<PlayerEvent>) {
@@ -49,25 +39,28 @@ async fn check_player_status(sink: Arc<Mutex<Sink>>, sender: mpsc::Sender<Player
         if is_playing {
             if cur_len == 0 {
                 is_playing = false;
-                sender.send(PlayerEvent::PlayEnded).await.unwrap();
+                sender.send(PlayerEvent::Ended).await.unwrap_or_default();
             }
-        } else {
-            if cur_len > 0 {
-                is_playing = true;
-            }
+        } else if cur_len > 0 {
+            is_playing = true;
         }
     }
 }
 
-fn get_device(device_name: String) -> Option<Device> {
-    let devices = rodio::cpal::default_host().output_devices().unwrap();
-    for device in devices {
-        let cur_dev_name = device.name().unwrap();
-        if device_name == cur_dev_name {
-            return Some(device);
+fn get_device(device_name: &str) -> Option<Device> {
+    match rodio::cpal::default_host().output_devices() {
+        Ok(devices) => {
+            devices
+                .filter(|device| device.name().unwrap_or_default() == device_name)
+                .collect::<Vec<Device>>()
+                .first()
+                .cloned()
+        },
+        Err(e) => {
+            warn!("Failed to get audio device: {:?}", e);
+            None
         }
     }
-    None
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -79,31 +72,34 @@ async fn main() -> Result<(), Error> {
     subscriber.lock().await.listen(INPUT_TOPIC).await.expect("Failed to listen");
     subscriber.lock().await.listen(STOP_TOPIC).await.expect("Failed to listen");
 
-    let device_name = module.config.get_module_value("device").unwrap_or("default".to_string());
+    let device_name = module.config.get_module_value("device").unwrap_or_else(|| "default".to_string());
 
     let (alfred_sender, mut player_receiver) = mpsc::channel(10);
     let (player_sender, mut alfred_receiver) = mpsc::channel::<PlayerEvent>(100);
     let player_sender_end_checker = player_sender.clone();
 
-    let device = get_device(device_name.clone()).expect(format!("Failed to get device {device_name}").as_str());
-    let (_output_stream, stream_handle) = OutputStream::try_from_device(&device).unwrap();
+    let device = get_device(device_name.as_str()).unwrap_or_else(|| panic!("Failed to get device {device_name}"));
+    let (_output_stream, stream_handle) = OutputStream::try_from_device(&device).expect("Failed to create output stream");
     let sink = Arc::new(Mutex::new(Sink::try_new(&stream_handle).expect("Error creating the sink")));
     let sink_end_checker = sink.clone();
 
     // alfred event-publisher
     tokio::spawn(async move {
         loop {
-            let player_event = alfred_receiver.recv().await.unwrap();
+            let Some(player_event) = alfred_receiver.recv().await else {
+                warn!("Cannot receive message from Alfred");
+                continue;
+            };
             debug!("Event: {:?}", player_event);
             match player_event {
-                PlayerEvent::PlayStarted(audio_file) => {
+                PlayerEvent::Started(audio_file) => {
                     let event_message = Message { text: audio_file, message_type: MessageType::AUDIO, ..Message::default() };
                     publisher.lock().await.send_event(MODULE_NAME, PLAY_START_EVENT, &event_message).await.expect("TODO: panic message");
                 }
-                PlayerEvent::PlayEnded => {
+                PlayerEvent::Ended => {
                     publisher.lock().await.send_event(MODULE_NAME, PLAY_END_EVENT, &Message::empty()).await.expect("TODO: panic message");
                 }
-                PlayerEvent::PlayStopped => {
+                PlayerEvent::Stopped => {
                     publisher.lock().await.send_event(MODULE_NAME, PLAY_STOP_EVENT, &Message::empty()).await.expect("TODO: panic message");
                 }
             }
@@ -113,13 +109,13 @@ async fn main() -> Result<(), Error> {
     // alfred subscriber
     tokio::spawn(async move {
         loop {
-            let (topic, message) = subscriber.lock().await.receive().await.expect("");
+            let (topic, message) = subscriber.lock().await.receive().await.expect("Failed to receive message");
             match topic.as_str() {
                 INPUT_TOPIC => {
-                    alfred_sender.send(PlayerCommand::Play(message.text.clone())).await.unwrap();
+                    alfred_sender.send(PlayerCommand::Play(message.text.clone())).await.expect("Cannot send play message");
                 },
                 STOP_TOPIC => {
-                    alfred_sender.send(PlayerCommand::Stop).await.unwrap();
+                    alfred_sender.send(PlayerCommand::Stop).await.expect("Cannot send stop message");
                 }
                 _ => {
                     warn!("Unknown topic {topic}");
@@ -138,25 +134,40 @@ async fn main() -> Result<(), Error> {
     loop {
         let sink = sink.clone();
         let player_sender = player_sender.clone();
-        let command = player_receiver.recv().await.unwrap().clone();
-        debug!("Analysing input command: {:?}", command);
-        match command {
-            PlayerCommand::Play(audio_file) => {
-                player_sender.send(PlayerEvent::PlayStopped).await.unwrap();
-                sink.lock().await.stop();
-                if audio_file.len() == 0 {
-                    continue;
-                }
-                let file = BufReader::new(File::open(audio_file.clone()).unwrap());
-                let source = Decoder::new(file).unwrap();
-                let mut play_start_msg = Message::default();
-                play_start_msg.text = audio_file.clone();
-                player_sender.send(PlayerEvent::PlayStarted(audio_file.clone())).await.unwrap();
+        if let Err(e) = player_handler(sink, player_sender, &mut player_receiver).await {
+            warn!("Error handling player {e:?}");
+        }
+    }
+}
+
+async fn player_handler(sink: Arc<Mutex<Sink>>, player_sender: mpsc::Sender<PlayerEvent>, player_receiver: &mut mpsc::Receiver<PlayerCommand>) -> Result<(), Box<dyn std::error::Error>> {
+    let command = player_receiver.recv().await.expect("Player disconnected");
+    debug!("Analysing input command: {:?}", command);
+    match command {
+        PlayerCommand::Play(audio_file) => {
+            player_sender.send(PlayerEvent::Stopped).await.unwrap_or_default();
+            sink.lock().await.stop();
+            if audio_file.is_empty() {
+                warn!("Audio file is empty");
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Audio file is empty").into());
+            }
+            let Ok(file) = File::open(audio_file.clone()) else {
+                error!("Error opening audio file {audio_file}");
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Audio file is invalid").into());
+            };
+            let file = BufReader::new(file);
+            let source = Decoder::new(file);
+            if let Ok(source) = source {
+                player_sender.send(PlayerEvent::Started(audio_file.clone())).await.unwrap_or(());
                 sink.lock().await.append(source);
+                Ok(())
+            } else {
+                Err("Audio file is invalid")?
             }
-            PlayerCommand::Stop => {
-                sink.lock().await.stop();
-            }
+        }
+        PlayerCommand::Stop => {
+            sink.lock().await.stop();
+            Ok(())
         }
     }
 }
