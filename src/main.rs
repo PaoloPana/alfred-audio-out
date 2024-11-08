@@ -4,7 +4,7 @@ use std::sync::Arc;
 use alfred_rs::connection::{Receiver, Sender};
 use alfred_rs::error::Error;
 use rodio::{Decoder, Device, DeviceTrait, OutputStream, Sink};
-use alfred_rs::interface_module::InterfaceModule;
+use alfred_rs::AlfredModule;
 use alfred_rs::log::{debug, error, warn};
 use alfred_rs::message::{Message, MessageType};
 use alfred_rs::tokio;
@@ -66,7 +66,7 @@ fn get_device(device_name: &str) -> Option<Device> {
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() -> Result<(), Error> {
     env_logger::init();
-    let module = InterfaceModule::new(MODULE_NAME).await.expect("Failed to create module");
+    let module = AlfredModule::new(MODULE_NAME).await.expect("Failed to create module");
     let subscriber = Arc::new(Mutex::new(module.connection.subscriber));
     let publisher = Arc::new(Mutex::new(module.connection.publisher));
     subscriber.lock().await.listen(INPUT_TOPIC).await.expect("Failed to listen");
@@ -93,7 +93,7 @@ async fn main() -> Result<(), Error> {
             debug!("Event: {:?}", player_event);
             match player_event {
                 PlayerEvent::Started(audio_file) => {
-                    let event_message = Message { text: audio_file, message_type: MessageType::AUDIO, ..Message::default() };
+                    let event_message = Message { text: audio_file, message_type: MessageType::Audio, ..Message::default() };
                     publisher.lock().await.send_event(MODULE_NAME, PLAY_START_EVENT, &event_message).await.expect("TODO: panic message");
                 }
                 PlayerEvent::Ended => {
