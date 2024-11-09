@@ -73,6 +73,8 @@ async fn main() -> Result<(), Error> {
     subscriber.lock().await.listen(STOP_TOPIC).await.expect("Failed to listen");
 
     let device_name = module.config.get_module_value("device").unwrap_or_else(|| "default".to_string());
+    let volume = module.config.get_module_value("volume")
+        .map_or(1.0, |s| s.parse::<f32>().expect("Volume parameter is not a number") / 100.0);
 
     let (alfred_sender, mut player_receiver) = mpsc::channel(10);
     let (player_sender, mut alfred_receiver) = mpsc::channel::<PlayerEvent>(100);
@@ -81,6 +83,7 @@ async fn main() -> Result<(), Error> {
     let device = get_device(device_name.as_str()).unwrap_or_else(|| panic!("Failed to get device {device_name}"));
     let (_output_stream, stream_handle) = OutputStream::try_from_device(&device).expect("Failed to create output stream");
     let sink = Arc::new(Mutex::new(Sink::try_new(&stream_handle).expect("Error creating the sink")));
+    sink.lock().await.set_volume(volume);
     let sink_end_checker = sink.clone();
 
     // alfred event-publisher
