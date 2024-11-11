@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
-use alfred_rs::connection::{Receiver, Sender};
 use alfred_rs::error::Error;
 use rodio::{Decoder, Device, DeviceTrait, OutputStream, Sink};
 use alfred_rs::AlfredModule;
@@ -66,11 +65,12 @@ fn get_device(device_name: &str) -> Option<Device> {
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() -> Result<(), Error> {
     env_logger::init();
-    let module = AlfredModule::new(MODULE_NAME).await.expect("Failed to create module");
-    let subscriber = Arc::new(Mutex::new(module.connection.subscriber));
-    let publisher = Arc::new(Mutex::new(module.connection.publisher));
-    subscriber.lock().await.listen(INPUT_TOPIC).await.expect("Failed to listen");
-    subscriber.lock().await.listen(STOP_TOPIC).await.expect("Failed to listen");
+    let mut module = AlfredModule::new(MODULE_NAME).await.expect("Failed to create module");
+    module.listen(INPUT_TOPIC).await.expect("Failed to listen");
+    module.listen(STOP_TOPIC).await.expect("Failed to listen");
+
+    let alfred_msg_recv = module.connection.clone();
+    let alfred_event = module.connection.clone();
 
     let device_name = module.config.get_module_value("device").unwrap_or_else(|| "default".to_string());
     let volume = module.config.get_module_value("volume")
@@ -97,13 +97,13 @@ async fn main() -> Result<(), Error> {
             match player_event {
                 PlayerEvent::Started(audio_file) => {
                     let event_message = Message { text: audio_file, message_type: MessageType::Audio, ..Message::default() };
-                    publisher.lock().await.send_event(MODULE_NAME, PLAY_START_EVENT, &event_message).await.expect("TODO: panic message");
+                    alfred_event.send_event(MODULE_NAME, PLAY_START_EVENT, &event_message).await.expect("TODO: panic message");
                 }
                 PlayerEvent::Ended => {
-                    publisher.lock().await.send_event(MODULE_NAME, PLAY_END_EVENT, &Message::empty()).await.expect("TODO: panic message");
+                    alfred_event.send_event(MODULE_NAME, PLAY_END_EVENT, &Message::empty()).await.expect("TODO: panic message");
                 }
                 PlayerEvent::Stopped => {
-                    publisher.lock().await.send_event(MODULE_NAME, PLAY_STOP_EVENT, &Message::empty()).await.expect("TODO: panic message");
+                    alfred_event.send_event(MODULE_NAME, PLAY_STOP_EVENT, &Message::empty()).await.expect("TODO: panic message");
                 }
             }
         }
@@ -112,7 +112,7 @@ async fn main() -> Result<(), Error> {
     // alfred subscriber
     tokio::spawn(async move {
         loop {
-            let (topic, message) = subscriber.lock().await.receive().await.expect("Failed to receive message");
+            let (topic, message) = alfred_msg_recv.receive().await.expect("Failed to receive message");
             match topic.as_str() {
                 INPUT_TOPIC => {
                     alfred_sender.send(PlayerCommand::Play(message.text.clone())).await.expect("Cannot send play message");
