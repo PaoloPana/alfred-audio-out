@@ -66,7 +66,7 @@ fn get_device(device_name: &str) -> Option<Device> {
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() -> Result<(), Error> {
     env_logger::init();
-    let mut module = AlfredModule::new(MODULE_NAME).await.expect("Failed to create module");
+    let mut module = AlfredModule::new(MODULE_NAME, env!("CARGO_PKG_VERSION")).await.expect("Failed to create module");
     module.listen(INPUT_TOPIC).await.expect("Failed to listen");
     module.listen(STOP_TOPIC).await.expect("Failed to listen");
 
