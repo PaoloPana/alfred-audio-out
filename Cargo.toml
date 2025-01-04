@@ -5,13 +5,13 @@ edition = "2021"
 
 [dependencies]
 rodio = "0.19.0"
-alfred-rs = { path = "../alfred-rs" }
+alfred-core = "0.1"
 env_logger = "0.11.5"
 
 [lints.clippy]
-all = "deny"
-pedantic = "deny"
-nursery = "deny"
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
 dbg_macro = "deny"
 decimal_literal_representation = "deny"
 filetype_is_file = "deny"
