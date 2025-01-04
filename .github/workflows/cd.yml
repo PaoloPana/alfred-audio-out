@@ -32,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install prerequisites
-        run: apt-get install -y alsa alsa-utils
+        run: sudo apt-get install -y alsa alsa-utils
       - name: Build
         run: cargo build --all-targets
       - name: Test
