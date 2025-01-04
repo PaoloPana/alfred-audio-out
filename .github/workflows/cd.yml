@@ -32,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install prerequisites
-        run: sudo apt-get install -y alsa alsa-utils
+        run: sudo apt-get install -y alsa alsa-utils libasound2-dev
       - name: Build
         run: cargo build --all-targets
       - name: Test
