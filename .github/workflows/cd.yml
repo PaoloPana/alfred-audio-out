@@ -68,7 +68,6 @@ jobs:
 
   create-release:
     permissions: write-all
-
     runs-on: ubuntu-24.04
     needs:
       - check-version
