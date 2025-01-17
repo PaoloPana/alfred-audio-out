@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -113,7 +113,7 @@ async fn main() -> Result<(), Error> {
     // alfred subscriber
     tokio::spawn(async move {
         loop {
-            let (topic, message) = alfred_msg_recv.receive(MODULE_NAME, &HashMap::new()).await.expect("Failed to receive message");
+            let (topic, message) = alfred_msg_recv.receive(MODULE_NAME, &BTreeMap::new()).await.expect("Failed to receive message");
             match topic.as_str() {
                 INPUT_TOPIC => {
                     alfred_sender.send(PlayerCommand::Play(message.text.clone())).await.expect("Cannot send play message");
