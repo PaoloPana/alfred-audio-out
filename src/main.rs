@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -57,7 +57,7 @@ fn get_device(device_name: &str) -> Option<Device> {
                 .cloned()
         },
         Err(e) => {
-            warn!("Failed to get audio device: {:?}", e);
+            warn!("Failed to get audio device: {e:?}");
             None
         }
     }
@@ -94,7 +94,7 @@ async fn main() -> Result<(), Error> {
                 warn!("Cannot receive message from Alfred");
                 continue;
             };
-            debug!("Event: {:?}", player_event);
+            debug!("Event: {player_event:?}");
             match player_event {
                 PlayerEvent::Started(audio_file) => {
                     let event_message = Message { text: audio_file, message_type: MessageType::Audio, ..Message::default() };
@@ -113,7 +113,7 @@ async fn main() -> Result<(), Error> {
     // alfred subscriber
     tokio::spawn(async move {
         loop {
-            let (topic, message) = alfred_msg_recv.receive(MODULE_NAME, &HashMap::new()).await.expect("Failed to receive message");
+            let (topic, message) = alfred_msg_recv.receive(MODULE_NAME, &BTreeMap::new()).await.expect("Failed to receive message");
             match topic.as_str() {
                 INPUT_TOPIC => {
                     alfred_sender.send(PlayerCommand::Play(message.text.clone())).await.expect("Cannot send play message");
@@ -146,7 +146,7 @@ async fn main() -> Result<(), Error> {
 
 async fn player_handler(sink: Arc<Mutex<Sink>>, player_sender: mpsc::Sender<PlayerEvent>, player_receiver: &mut mpsc::Receiver<PlayerCommand>) -> Result<(), Box<dyn std::error::Error>> {
     let command = player_receiver.recv().await.expect("Player disconnected");
-    debug!("Analysing input command: {:?}", command);
+    debug!("Analysing input command: {command:?}");
     match command {
         PlayerCommand::Play(audio_file) => {
             player_sender.send(PlayerEvent::Stopped).await.unwrap_or_default();
