@@ -57,7 +57,7 @@ fn get_device(device_name: &str) -> Option<Device> {
                 .cloned()
         },
         Err(e) => {
-            warn!("Failed to get audio device: {:?}", e);
+            warn!("Failed to get audio device: {e:?}");
             None
         }
     }
@@ -94,7 +94,7 @@ async fn main() -> Result<(), Error> {
                 warn!("Cannot receive message from Alfred");
                 continue;
             };
-            debug!("Event: {:?}", player_event);
+            debug!("Event: {player_event:?}");
             match player_event {
                 PlayerEvent::Started(audio_file) => {
                     let event_message = Message { text: audio_file, message_type: MessageType::Audio, ..Message::default() };
@@ -146,7 +146,7 @@ async fn main() -> Result<(), Error> {
 
 async fn player_handler(sink: Arc<Mutex<Sink>>, player_sender: mpsc::Sender<PlayerEvent>, player_receiver: &mut mpsc::Receiver<PlayerCommand>) -> Result<(), Box<dyn std::error::Error>> {
     let command = player_receiver.recv().await.expect("Player disconnected");
-    debug!("Analysing input command: {:?}", command);
+    debug!("Analysing input command: {command:?}");
     match command {
         PlayerCommand::Play(audio_file) => {
             player_sender.send(PlayerEvent::Stopped).await.unwrap_or_default();
